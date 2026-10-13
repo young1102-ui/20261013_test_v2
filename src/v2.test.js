@@ -1,0 +1,11 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import {initialData} from './model.js';
+import {checkedData,backupText,mergeData,csvText,requireRevision} from './v2.js';
+test('JSON 백업을 복원하면 ID와 전체 자료 유지',()=>{const data=initialData();assert.deepEqual(checkedData(JSON.parse(backupText(data))),data);});
+test('같은 자료를 두 번 이전해도 중복 없음',()=>{const data=initialData();assert.deepEqual(mergeData(mergeData(data,data),data),data);});
+test('같은 ID 다른 내용은 원본 유지하고 충돌 중단',()=>{const data=initialData();const changed=structuredClone(data);changed.entries[0].amount=1;assert.throws(()=>mergeData(data,changed),/같은 ID/);assert.equal(data.entries[0].amount,850000);});
+test('분류 누락 내역은 미분류로 보존',()=>{const data=initialData();data.categories=[];assert.equal(checkedData(data).entries.length,5);assert.ok(csvText(data).includes('미분류'));});
+test('손상 자료·중복 ID·잘못된 날짜·0원 차단',()=>{const d=initialData();for(const modify of [x=>x.entries.push(x.entries[0]),x=>x.entries[0].date='2026-02-30',x=>x.entries[0].amount=0,x=>x.categories[0].name='']){const v=structuredClone(d);modify(v);assert.throws(()=>checkedData(v));}});
+test('CSV 한국어 BOM, 쉼표·줄바꿈·따옴표 보존, 수식 실행 차단',()=>{const d=initialData();d.entries[0].memo='=SUM(1,2)\n"확인"';const csv=csvText(d);assert.ok(csv.startsWith('\uFEFF'));assert.ok(csv.includes('"\'=SUM(1,2)\n""확인"""'));assert.ok(csv.includes('850000'));assert.equal(csvText(d,'1900-01').split('\r\n').length,1);});
+test('동시 수정 버전 충돌 차단',()=>{assert.doesNotThrow(()=>requireRevision(2,2));assert.throws(()=>requireRevision(2,3),/다른 기기/);});
